@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
 
 const Any = "Any"
@@ -24,6 +25,7 @@ func (r *Router) Group(name string) *RouterGroup {
 		groupName:        name,
 		handlerMap:       make(map[string]map[string]HandlerFunc),
 		handlerMethodMap: make(map[string][]string),
+		treeNode:         &Tree{Name: "/", Children: make([]*Tree, 0)},
 	}
 	r.groups = append(r.groups, g)
 	return g
@@ -33,6 +35,16 @@ type RouterGroup struct {
 	groupName        string                            // group name
 	handlerMap       map[string]map[string]HandlerFunc // handler map
 	handlerMethodMap map[string][]string               // handler method map
+	treeNode         *Tree
+}
+
+func SubStringLast(str string, substr string) string {
+	index := strings.Index(str, substr)
+	if index == -1 {
+		return ""
+	}
+	len := len(substr)
+	return str[index+len:]
 }
 
 func (r *RouterGroup) handle(name string, method string, handlerFunc HandlerFunc) {
@@ -42,6 +54,7 @@ func (r *RouterGroup) handle(name string, method string, handlerFunc HandlerFunc
 	}
 	r.handlerMap[name][method] = handlerFunc
 	r.handlerMethodMap[method] = append(r.handlerMethodMap[method], name)
+	r.treeNode.Put(name)
 }
 
 func (r *RouterGroup) Any(name string, handlerFunc HandlerFunc) {
@@ -77,37 +90,33 @@ type Engine struct {
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	fmt.Println(req.Method)
 	groups := e.Router.groups
 	for _, g := range groups {
-		for name, methodHandle := range g.handlerMap {
-			url := "/" + g.groupName + "/" + name
-			if req.RequestURI == url {
-				ctx := &Context{
-					W: w,
-					R: req,
-				}
-				_, ok := methodHandle[Any]
-				if ok {
-					methodHandle[Any](ctx)
-					return
-				}
-				method := req.Method
-				handler, ok := methodHandle[method]
-				if ok {
-					handler(ctx)
-					return
-				}
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				fmt.Fprintln(w, req.RequestURI+method+" not allowed")
-				return
-			} else {
-				w.WriteHeader(http.StatusNotFound)
-				fmt.Fprintln(w, req.RequestURI+" not found")
+		routerName := SubStringLast(req.RequestURI, "/"+g.groupName)
+		node := g.treeNode.Get(routerName)
+		if node != nil {
+			ctx := &Context{
+				W: w,
+				R: req,
+			}
+			_, ok := g.handlerMap[node.RouterName][Any]
+			if ok {
+				g.handlerMap[node.RouterName][Any](ctx)
 				return
 			}
+			method := req.Method
+			handler, ok := g.handlerMap[node.RouterName][method]
+			if ok {
+				handler(ctx)
+				return
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			fmt.Fprintln(w, req.RequestURI+method+" not allowed")
+			return
 		}
 	}
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintf(w, "%s  not found \n", req.RequestURI)
 }
 
 func New() *Engine {
