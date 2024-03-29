@@ -6,7 +6,14 @@ import (
 	"net/http"
 )
 
-type HandlerFunc func(http.ResponseWriter, *http.Request)
+const Any = "Any"
+
+type Context struct {
+	W http.ResponseWriter
+	R *http.Request
+}
+
+type HandlerFunc func(ctx *Context)
 
 type Router struct {
 	groups []*RouterGroup
@@ -15,7 +22,7 @@ type Router struct {
 func (r *Router) Group(name string) *RouterGroup {
 	g := &RouterGroup{
 		groupName:        name,
-		handlerMap:       make(map[string]HandlerFunc),
+		handlerMap:       make(map[string]map[string]HandlerFunc),
 		handlerMethodMap: make(map[string][]string),
 	}
 	r.groups = append(r.groups, g)
@@ -23,13 +30,46 @@ func (r *Router) Group(name string) *RouterGroup {
 }
 
 type RouterGroup struct {
-	groupName        string                 // group name
-	handlerMap       map[string]HandlerFunc // handler map
-	handlerMethodMap map[string][]string    // handler method map
+	groupName        string                            // group name
+	handlerMap       map[string]map[string]HandlerFunc // handler map
+	handlerMethodMap map[string][]string               // handler method map
 }
 
-func (r *RouterGroup) Add(name string, handlerFunc HandlerFunc) {
-	r.handlerMap[name] = handlerFunc
+func (r *RouterGroup) handle(name string, method string, handlerFunc HandlerFunc) {
+	_, ok := r.handlerMap[name]
+	if !ok {
+		r.handlerMap[name] = make(map[string]HandlerFunc)
+	}
+	r.handlerMap[name][method] = handlerFunc
+	r.handlerMethodMap[method] = append(r.handlerMethodMap[method], name)
+}
+
+func (r *RouterGroup) Any(name string, handlerFunc HandlerFunc) {
+	r.handle(name, Any, handlerFunc)
+}
+
+func (r *RouterGroup) Get(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodGet, handlerFunc)
+}
+
+func (r *RouterGroup) Post(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodPost, handlerFunc)
+}
+
+func (r *RouterGroup) Delete(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodDelete, handlerFunc)
+}
+func (r *RouterGroup) Put(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodPut, handlerFunc)
+}
+func (r *RouterGroup) Patch(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodPatch, handlerFunc)
+}
+func (r *RouterGroup) Options(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodOptions, handlerFunc)
+}
+func (r *RouterGroup) Head(name string, handlerFunc HandlerFunc) {
+	r.handle(name, http.MethodHead, handlerFunc)
 }
 
 type Engine struct {
@@ -38,6 +78,36 @@ type Engine struct {
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Println(req.Method)
+	groups := e.Router.groups
+	for _, g := range groups {
+		for name, methodHandle := range g.handlerMap {
+			url := "/" + g.groupName + "/" + name
+			if req.RequestURI == url {
+				ctx := &Context{
+					W: w,
+					R: req,
+				}
+				_, ok := methodHandle[Any]
+				if ok {
+					methodHandle[Any](ctx)
+					return
+				}
+				method := req.Method
+				handler, ok := methodHandle[method]
+				if ok {
+					handler(ctx)
+					return
+				}
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				fmt.Fprintln(w, req.RequestURI+method+" not allowed")
+				return
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprintln(w, req.RequestURI+" not found")
+				return
+			}
+		}
+	}
 }
 
 func New() *Engine {
@@ -47,13 +117,7 @@ func New() *Engine {
 }
 
 func (e *Engine) Run() {
-	//http.Handle("/", e)
-	groups := e.Router.groups
-	for _, g := range groups {
-		for name, handle := range g.handlerMap {
-			http.HandleFunc("/"+g.groupName+"/"+name, handle)
-		}
-	}
+	http.Handle("/", e)
 	err := http.ListenAndServe(":8111", nil)
 	if err != nil {
 		log.Fatal(err)
