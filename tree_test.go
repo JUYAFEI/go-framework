@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// 前缀树单元测试
+// 前缀树单元test
 func TestTree(t *testing.T) {
 	tree := &Tree{
 		Name:     "/",
