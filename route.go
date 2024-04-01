@@ -126,7 +126,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	ctx := e.pool.Get().(*Context)
 	ctx.W = w
 	ctx.R = req
-	e.httpRequestHandler(ctx, w, req)
+	e.httpRequestHandler(ctx)
 }
 
 func New() *Engine {
@@ -146,10 +146,10 @@ func (e *Engine) allocateContext() *Context {
 	return &Context{Engine: e}
 }
 
-func (e *Engine) httpRequestHandler(ctx *Context, w http.ResponseWriter, req *http.Request) {
+func (e *Engine) httpRequestHandler(ctx *Context) {
 	groups := e.Router.groups
 	for _, g := range groups {
-		routerName := SubStringLast(req.RequestURI, "/"+g.groupName)
+		routerName := SubStringLast(ctx.R.RequestURI, "/"+g.groupName)
 		node := g.treeNode.Get(routerName)
 		if node != nil {
 			anyHandler, ok := g.handlerMap[node.RouterName][Any]
@@ -157,19 +157,19 @@ func (e *Engine) httpRequestHandler(ctx *Context, w http.ResponseWriter, req *ht
 				g.methodHandle(node.RouterName, Any, anyHandler, ctx)
 				return
 			}
-			method := req.Method
+			method := ctx.R.Method
 			handler, ok := g.handlerMap[node.RouterName][method]
 			if ok {
 				g.methodHandle(node.RouterName, method, handler, ctx)
 				return
 			}
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			fmt.Fprintln(w, req.RequestURI+method+" not allowed")
+			ctx.W.WriteHeader(http.StatusMethodNotAllowed)
+			fmt.Fprintln(ctx.W, ctx.R.RequestURI+method+" not allowed")
 			return
 		}
 	}
-	w.WriteHeader(http.StatusNotFound)
-	fmt.Fprintf(w, "%s  not found \n", req.RequestURI)
+	ctx.W.WriteHeader(http.StatusNotFound)
+	fmt.Fprintf(ctx.W, "%s  not found \n", ctx.R.RequestURI)
 }
 
 func (e *Engine) Run() {
