@@ -14,18 +14,15 @@ type String struct {
 var plainContentType = []string{"text/plain; charset=utf-8"}
 
 func (s *String) Render(w http.ResponseWriter) error {
+	s.WriteContentType(w)
 	if len(s.Data) > 0 {
-		_, err := fmt.Fprintf(w, s.Format, s.Data)
+		_, err := fmt.Fprintf(w, s.Format, s.Data...)
 		return err
 	}
 	_, err := w.Write(bytesconv.StringToBytes(s.Format))
 	return err
 }
 
-func (s String) WriteContentType(w http.ResponseWriter) {
-	//writeContentType(w, plainContentType)
+func (s *String) WriteContentType(w http.ResponseWriter) {
+	writeContentType(w, "text/plain; charset=utf-8")
 }
-
-//func (s *String) WriteContentType(w http.ResponseWriter) error {
-//	return WriteString(w, r.Format, r.Data)
-//}
