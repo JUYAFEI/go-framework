@@ -2,17 +2,13 @@ package go_framework
 
 import (
 	"fmt"
+	"github.com/JUYAFEI/go-framework/render"
+	"html/template"
 	"log"
 	"net/http"
-	"strings"
 )
 
 const Any = "Any"
-
-type Context struct {
-	W http.ResponseWriter
-	R *http.Request
-}
 
 type HandlerFunc func(ctx *Context)
 
@@ -65,15 +61,6 @@ func (r *RouterGroup) methodHandle(name string, method string, h HandlerFunc, ct
 	h(ctx)
 }
 
-func SubStringLast(str string, substr string) string {
-	index := strings.Index(str, substr)
-	if index == -1 {
-		return ""
-	}
-	len := len(substr)
-	return str[index+len:]
-}
-
 func (r *RouterGroup) handle(name string, method string, handlerFunc HandlerFunc, middlewareFunc ...MiddlewareFunc) {
 	_, ok := r.handlerMap[name]
 	if !ok {
@@ -116,6 +103,21 @@ func (r *RouterGroup) Head(name string, handlerFunc HandlerFunc, middlewareFunc 
 
 type Engine struct {
 	*Router
+	funcMap    template.FuncMap
+	HTMLRender render.HTMLRender
+}
+
+func (e *Engine) SetFuncMap(funcMap template.FuncMap) {
+	e.funcMap = funcMap
+}
+
+func (e *Engine) SetHtmlTemplate(t *template.Template) {
+	e.HTMLRender = render.HTMLRender{Template: t}
+}
+
+func (e *Engine) LoadTemplateGlob(pattern string) {
+	t := template.Must(template.New("").Funcs(e.funcMap).ParseGlob(pattern))
+	e.SetHtmlTemplate(t)
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -124,7 +126,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func New() *Engine {
 	return &Engine{
-		&Router{},
+		Router: &Router{},
 	}
 }
 
@@ -135,8 +137,9 @@ func (e *Engine) httpRequestHandler(w http.ResponseWriter, req *http.Request) {
 		node := g.treeNode.Get(routerName)
 		if node != nil {
 			ctx := &Context{
-				W: w,
-				R: req,
+				W:      w,
+				R:      req,
+				Engine: e,
 			}
 			anyHandler, ok := g.handlerMap[node.RouterName][Any]
 			if ok {
