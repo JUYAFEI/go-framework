@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sync"
 )
 
 const Any = "Any"
@@ -105,6 +106,7 @@ type Engine struct {
 	*Router
 	funcMap    template.FuncMap
 	HTMLRender render.HTMLRender
+	pool       sync.Pool
 }
 
 func (e *Engine) SetFuncMap(funcMap template.FuncMap) {
@@ -121,26 +123,35 @@ func (e *Engine) LoadTemplateGlob(pattern string) {
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	e.httpRequestHandler(w, req)
+	ctx := e.pool.Get().(*Context)
+	ctx.W = w
+	ctx.R = req
+	e.httpRequestHandler(ctx, w, req)
 }
 
 func New() *Engine {
-	return &Engine{
-		Router: &Router{},
+
+	engine := &Engine{
+		Router:     &Router{},
+		funcMap:    nil,
+		HTMLRender: render.HTMLRender{},
 	}
+	engine.pool.New = func() any {
+		return engine.allocateContext()
+	}
+	return engine
 }
 
-func (e *Engine) httpRequestHandler(w http.ResponseWriter, req *http.Request) {
+func (e *Engine) allocateContext() *Context {
+	return &Context{Engine: e}
+}
+
+func (e *Engine) httpRequestHandler(ctx *Context, w http.ResponseWriter, req *http.Request) {
 	groups := e.Router.groups
 	for _, g := range groups {
 		routerName := SubStringLast(req.RequestURI, "/"+g.groupName)
 		node := g.treeNode.Get(routerName)
 		if node != nil {
-			ctx := &Context{
-				W:      w,
-				R:      req,
-				Engine: e,
-			}
 			anyHandler, ok := g.handlerMap[node.RouterName][Any]
 			if ok {
 				g.methodHandle(node.RouterName, Any, anyHandler, ctx)
