@@ -149,7 +149,7 @@ func (e *Engine) allocateContext() *Context {
 func (e *Engine) httpRequestHandler(ctx *Context) {
 	groups := e.Router.groups
 	for _, g := range groups {
-		routerName := SubStringLast(ctx.R.RequestURI, "/"+g.groupName)
+		routerName := SubStringLast(ctx.R.URL.Path, "/"+g.groupName)
 		node := g.treeNode.Get(routerName)
 		if node != nil {
 			anyHandler, ok := g.handlerMap[node.RouterName][Any]

@@ -6,12 +6,74 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
+const DefaultMemory = 1024
+
 type Context struct {
-	W      http.ResponseWriter
-	R      *http.Request
-	Engine *Engine
+	W          http.ResponseWriter
+	R          *http.Request
+	Engine     *Engine
+	queryCache url.Values
+}
+
+func (c *Context) QueryMap(key string) (dicts map[string]string) {
+	dicts, _ = c.GetQueryMap(key)
+	return
+}
+
+func (c *Context) GetQueryMap(key string) (map[string]string, bool) {
+	c.initQueryCache()
+	return c.get(c.queryCache, key)
+}
+
+func (c *Context) get(m map[string][]string, key string) (map[string]string, bool) {
+	//user[id]=1&user[name]=张三
+	dicts := make(map[string]string)
+	exist := false
+	for k, value := range m {
+		if i := strings.IndexByte(k, '['); i >= 1 && k[0:i] == key {
+			if j := strings.IndexByte(k[i+1:], ']'); j >= 1 {
+				exist = true
+				dicts[k[i+1:][:j]] = value[0]
+			}
+		}
+	}
+	return dicts, exist
+}
+
+func (c *Context) initQueryCache() {
+	if c.R != nil {
+		c.queryCache = c.R.URL.Query()
+	} else {
+		c.queryCache = url.Values{}
+	}
+}
+
+func (c *Context) DefaultQuery(key, defaultValue string) string {
+	array, ok := c.GetQueryArray(key)
+	if !ok {
+		return defaultValue
+	}
+	return array[0]
+}
+
+func (c *Context) GetQueryArray(key string) (values []string, ok bool) {
+	c.initQueryCache()
+	values, ok = c.queryCache[key]
+	return
+}
+
+func (c *Context) GetQuery(key string) string {
+	c.initQueryCache()
+	return c.queryCache.Get(key)
+}
+
+func (c *Context) QueryArray(key string) (values []string) {
+	c.initQueryCache()
+	values, _ = c.queryCache[key]
+	return
 }
 
 func (c *Context) HTML(status int, html string) {
@@ -100,6 +162,8 @@ func (c *Context) String(status int, format string, values ...any) (err error) {
 
 func (c *Context) Render(statusCode int, r render.Render) error {
 	err := r.Render(c.W)
-	c.W.WriteHeader(statusCode)
+	if statusCode != http.StatusOK {
+		c.W.WriteHeader(statusCode)
+	}
 	return err
 }
