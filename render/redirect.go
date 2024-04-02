@@ -19,5 +19,4 @@ func (r Redirect) Render(w http.ResponseWriter) error {
 	return nil
 }
 
-// WriteContentType (Redirect) don't write any ContentType.
 func (r Redirect) WriteContentType(http.ResponseWriter) {}

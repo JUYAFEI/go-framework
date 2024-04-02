@@ -22,6 +22,7 @@ type Context struct {
 	Engine     *Engine
 	queryCache url.Values
 	formCache  url.Values
+	StatusCode int
 }
 
 func (c *Context) QueryMap(key string) (dicts map[string]string) {
@@ -256,6 +257,7 @@ func (c *Context) String(status int, format string, values ...any) (err error) {
 
 func (c *Context) Render(statusCode int, r render.Render) error {
 	err := r.Render(c.W)
+	c.StatusCode = statusCode
 	if statusCode != http.StatusOK {
 		c.W.WriteHeader(statusCode)
 	}
