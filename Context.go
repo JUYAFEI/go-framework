@@ -3,6 +3,7 @@ package go_framework
 import (
 	"encoding/json"
 	"errors"
+	golog "github.com/JUYAFEI/go-framework/log"
 	"github.com/JUYAFEI/go-framework/render"
 	"html/template"
 	"io"
@@ -23,6 +24,7 @@ type Context struct {
 	queryCache url.Values
 	formCache  url.Values
 	StatusCode int
+	Logger     *golog.Logger
 }
 
 func (c *Context) QueryMap(key string) (dicts map[string]string) {
@@ -262,4 +264,8 @@ func (c *Context) Render(statusCode int, r render.Render) error {
 		c.W.WriteHeader(statusCode)
 	}
 	return err
+}
+
+func (c *Context) Fail(code int, msg string) {
+	c.String(code, msg)
 }
