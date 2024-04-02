@@ -34,14 +34,23 @@ const (
 )
 
 type Logger struct {
-	Formatter LoggerFormatter
-	Level     LoggerLevel
-	Outs      []io.Writer
+	Formatter    LoggerFormatter
+	Level        LoggerLevel
+	Outs         []io.Writer
+	LoggerFields Fields
 }
 
+type Fields map[string]any
+
 type LoggerFormatter struct {
-	Level   LoggerLevel
-	IsColor bool
+	Level        LoggerLevel
+	IsColor      bool
+	LoggerFields Fields
+	Msg          any
+}
+
+type LoggingFormatter interface {
+	Formatter(Param *LoggerFormatter)
 }
 
 func DefaultLogger() *Logger {
@@ -51,7 +60,6 @@ func DefaultLogger() *Logger {
 	logger.Level = LevelDebug
 	logger.Formatter = LoggerFormatter{}
 	return logger
-
 }
 
 func NewLogger() *Logger {
@@ -74,31 +82,45 @@ func (l *Logger) Print(level LoggerLevel, args any) {
 	if l.Level > level {
 		return
 	}
+	param := &LoggerFormatter{
+		Level:        level,
+		Msg:          args,
+		LoggerFields: l.LoggerFields,
+	}
 	l.Formatter.Level = level
-	formatter := l.Formatter.formatter(args)
+	formatter := l.Formatter.Formatter(param)
 	for _, out := range l.Outs {
 		if out == os.Stdout {
 			l.Formatter.IsColor = true
-			formatter = l.Formatter.formatter(args)
+			formatter = l.Formatter.Formatter(param)
 		}
 		fmt.Fprint(out, formatter)
 	}
 
 }
 
-func (f *LoggerFormatter) formatter(msg any) string {
+func (l *Logger) WithFields(fields Fields) *Logger {
+	return &Logger{
+		Formatter:    l.Formatter,
+		Outs:         l.Outs,
+		Level:        l.Level,
+		LoggerFields: fields,
+	}
+}
+
+func (f *LoggerFormatter) Formatter(param *LoggerFormatter) string {
 	now := time.Now()
 	if f.IsColor {
 		levelColor := f.LevelColor()
 		msgColor := f.MsgColor()
-		return fmt.Sprintf("%s [msgo] %s %s%v%s | level= %s %s %s | msg=%s %#v %s \n",
+		return fmt.Sprintf("%s [go-framework] %s %s%v%s | level= %s %v %s | msg=%s %#v %s | fields=%v\n",
 			yellow, reset, blue, now.Format("2006/01/02 - 15:04:05"), reset,
-			levelColor, f.Level.Level(), reset, msgColor, msg, reset,
+			levelColor, param.Level, reset, msgColor, param.Msg, reset, param.LoggerFields,
 		)
 	}
-	return fmt.Sprintf("[go-framework] %v | level=%s | msg=%#v \n",
+	return fmt.Sprintf("[go-framework] %v | level=%s | msg=%#v fields=%v\n",
 		now.Format("2006/01/02 - 15:04:05"),
-		f.Level.Level(), msg,
+		f.Level.Level(), param.Msg, param.LoggerFields,
 	)
 }
 
