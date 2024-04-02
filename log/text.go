@@ -9,7 +9,7 @@ import (
 type TextFormatter struct {
 }
 
-func (t *TextFormatter) Formatter(param *LoggerFormatter) string {
+func (t *TextFormatter) Formatter(param *LoggingFormatParam) string {
 	now := time.Now()
 	var builderField strings.Builder
 	var fieldsDisplay = ""

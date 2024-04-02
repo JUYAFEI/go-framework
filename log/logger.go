@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"time"
 )
 
@@ -34,10 +35,11 @@ const (
 )
 
 type Logger struct {
-	Formatter    LoggerFormatter
+	Formatter    LoggingFormatter
 	Level        LoggerLevel
-	Outs         []io.Writer
+	Outs         []*LoggerWriter
 	LoggerFields Fields
+	logPath      string
 }
 
 type Fields map[string]any
@@ -46,19 +48,38 @@ type LoggerFormatter struct {
 	Level        LoggerLevel
 	IsColor      bool
 	LoggerFields Fields
-	Msg          any
 }
 
 type LoggingFormatter interface {
-	Formatter(Param *LoggerFormatter)
+	Formatter(Param *LoggingFormatParam) string
+}
+
+type LoggingFormatParam struct {
+	Level        LoggerLevel
+	IsColor      bool
+	LoggerFields Fields
+	Msg          any
+}
+
+type LoggerWriter struct {
+	Level LoggerLevel
+	Out   io.Writer
+}
+
+func FileWriter(name string) (io.Writer, error) {
+	w, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	return w, err
 }
 
 func DefaultLogger() *Logger {
 	logger := NewLogger()
-	out := os.Stdout
-	logger.Outs = append(logger.Outs, out)
 	logger.Level = LevelDebug
-	logger.Formatter = LoggerFormatter{}
+	w := &LoggerWriter{
+		Level: LevelDebug,
+		Out:   os.Stdout,
+	}
+	logger.Outs = append(logger.Outs, w)
+	logger.Formatter = &TextFormatter{}
 	return logger
 }
 
@@ -82,21 +103,47 @@ func (l *Logger) Print(level LoggerLevel, args any) {
 	if l.Level > level {
 		return
 	}
-	param := &LoggerFormatter{
+	param := &LoggingFormatParam{
 		Level:        level,
 		Msg:          args,
 		LoggerFields: l.LoggerFields,
 	}
-	l.Formatter.Level = level
 	formatter := l.Formatter.Formatter(param)
 	for _, out := range l.Outs {
-		if out == os.Stdout {
-			l.Formatter.IsColor = true
+		if out.Out == os.Stdout {
+			param.IsColor = true
 			formatter = l.Formatter.Formatter(param)
+			fmt.Fprint(out.Out, formatter)
 		}
-		fmt.Fprint(out, formatter)
+		if out.Level == -1 || out.Level == level {
+			fmt.Fprintln(out.Out, formatter)
+		}
 	}
 
+}
+
+func (l *Logger) SetLogPath(logPath string) {
+	l.logPath = logPath
+	all, err := FileWriter(path.Join(l.logPath, time.Now().Format("2006-01-02")+"-all.log"))
+	if err != nil {
+		panic(err)
+	}
+	l.Outs = append(l.Outs, &LoggerWriter{Level: -1, Out: all})
+	debug, err := FileWriter(path.Join(l.logPath, time.Now().Format("2006-01-02")+"-debug.log"))
+	if err != nil {
+		panic(err)
+	}
+	l.Outs = append(l.Outs, &LoggerWriter{Level: LevelDebug, Out: debug})
+	info, err := FileWriter(path.Join(l.logPath, time.Now().Format("2006-01-02")+"-info.log"))
+	if err != nil {
+		panic(err)
+	}
+	l.Outs = append(l.Outs, &LoggerWriter{Level: LevelInfo, Out: info})
+	logError, err := FileWriter(path.Join(l.logPath, time.Now().Format("2006-01-02")+"-error.log"))
+	if err != nil {
+		panic(err)
+	}
+	l.Outs = append(l.Outs, &LoggerWriter{Level: LevelError, Out: logError})
 }
 
 func (l *Logger) WithFields(fields Fields) *Logger {
@@ -108,7 +155,7 @@ func (l *Logger) WithFields(fields Fields) *Logger {
 	}
 }
 
-func (f *LoggerFormatter) Formatter(param *LoggerFormatter) string {
+func (f *LoggerFormatter) Formatter(param *LoggingFormatParam) string {
 	now := time.Now()
 	if f.IsColor {
 		levelColor := f.LevelColor()
