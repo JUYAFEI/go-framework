@@ -2,6 +2,7 @@ package go_framework
 
 import (
 	"fmt"
+	golog "github.com/JUYAFEI/go-framework/log"
 	"github.com/JUYAFEI/go-framework/render"
 	"html/template"
 	"log"
@@ -18,6 +19,7 @@ type MiddlewareFunc func(handler HandlerFunc) HandlerFunc
 
 type Router struct {
 	groups []*RouterGroup
+	engine *Engine
 }
 
 func (r *Router) Group(name string) *RouterGroup {
@@ -107,6 +109,8 @@ type Engine struct {
 	funcMap    template.FuncMap
 	HTMLRender render.HTMLRender
 	pool       sync.Pool
+	Logger     *golog.Logger
+	middles    []MiddlewareFunc
 }
 
 func (e *Engine) SetFuncMap(funcMap template.FuncMap) {
@@ -126,7 +130,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	ctx := e.pool.Get().(*Context)
 	ctx.W = w
 	ctx.R = req
+	ctx.Logger = e.Logger
 	e.httpRequestHandler(ctx)
+	e.pool.Put(ctx)
 }
 
 func New() *Engine {
@@ -135,6 +141,7 @@ func New() *Engine {
 		Router:     &Router{},
 		funcMap:    nil,
 		HTMLRender: render.HTMLRender{},
+		Logger:     golog.DefaultLogger(),
 	}
 	engine.pool.New = func() any {
 		return engine.allocateContext()
@@ -142,8 +149,19 @@ func New() *Engine {
 	return engine
 }
 
+func Default() *Engine {
+	engine := New()
+	engine.Use(Logging, Recovery)
+	engine.Router.engine = engine
+	return engine
+}
+
 func (e *Engine) allocateContext() *Context {
 	return &Context{Engine: e}
+}
+
+func (e *Engine) Use(middles ...MiddlewareFunc) {
+	e.middles = append(e.middles, middles...)
 }
 
 func (e *Engine) httpRequestHandler(ctx *Context) {
