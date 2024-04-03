@@ -12,8 +12,6 @@ type sig struct {
 
 const DefaultExpire = 3
 
-var ()
-
 type Pool struct {
 	workers []*worker     //空闲worker
 	cap     int32         //容量
@@ -40,10 +38,47 @@ func NewTimePool(cap int, expire int) (*Pool, error) {
 		expire:  time.Duration(expire) * time.Second,
 		release: make(chan sig, 1),
 	}
+	// 启动一个协程定时清理过期的worker
+	go p.expireWorker()
 	return p, nil
 }
 
+// 清理过期的协程
+func (p *Pool) expireWorker() {
+	ticker := time.NewTicker(p.expire)
+	for range ticker.C {
+		currentTime := time.Now()
+		if len(p.release) > 0 {
+			break
+		}
+		p.lock.Lock()
+		idleWorkers := p.workers
+		n := -1
+		for i, w := range idleWorkers {
+			if currentTime.Sub(w.lastTime) <= p.expire {
+				break
+			}
+			//需要清除的
+			n = i
+			w.task <- nil
+			idleWorkers[i] = nil
+		}
+		if n > -1 {
+			if n >= len(idleWorkers)-1 {
+				p.workers = idleWorkers[:0]
+			} else {
+				p.workers = idleWorkers[n+1:]
+			}
+		}
+		p.lock.Unlock()
+
+	}
+}
+
 func (p *Pool) Submit(task func()) error {
+	if len(p.release) > 0 {
+		return errors.New("pool has bean released")
+	}
 	//获取池子里的worker 然后执行
 	w := p.GetWorker()
 	w.task <- task
@@ -104,5 +139,33 @@ func (p *Pool) putWorker(w *worker) {
 
 func (p *Pool) decRunning() {
 	atomic.AddInt32(&p.running, -1)
+}
 
+func (p *Pool) Release() {
+	p.once.Do(func() {
+		//只执行一次
+		p.lock.Lock()
+		workers := p.workers
+		for i, w := range workers {
+			w.task = nil
+			w.Pool = nil
+			workers[i] = nil
+		}
+		p.workers = nil
+		p.lock.Unlock()
+		p.release <- sig{}
+	})
+}
+
+func (p *Pool) IsClosed() bool {
+
+	return len(p.release) > 0
+}
+
+func (p *Pool) Restart() bool {
+	if len(p.release) <= 0 {
+		return true
+	}
+	_ = <-p.release
+	return true
 }
