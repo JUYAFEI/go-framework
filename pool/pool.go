@@ -13,13 +13,14 @@ type sig struct {
 const DefaultExpire = 3
 
 type Pool struct {
-	workers []*worker     //空闲worker
-	cap     int32         //容量
-	running int32         //正在运行的worker数量
-	expire  time.Duration //空闲worker过期时间
-	release chan sig      //释放资源
-	lock    sync.Mutex
-	once    sync.Once //保证只执行一次
+	workers     []*worker     //空闲worker
+	cap         int32         //容量
+	running     int32         //正在运行的worker数量
+	expire      time.Duration //空闲worker过期时间
+	release     chan sig      //释放资源
+	lock        sync.Mutex
+	once        sync.Once //保证只执行一次
+	workerCache sync.Pool
 }
 
 func NewPool(cap int) (*Pool, error) {
@@ -79,7 +80,6 @@ func (p *Pool) Submit(task func()) error {
 	if len(p.release) > 0 {
 		return errors.New("pool has bean released")
 	}
-	//获取池子里的worker 然后执行
 	w := p.GetWorker()
 	w.task <- task
 	w.Pool.inRunning()
@@ -87,8 +87,7 @@ func (p *Pool) Submit(task func()) error {
 }
 
 func (p *Pool) GetWorker() *worker {
-	//1、获取pool里的worker
-	//2、如果有空闲的worker 直接获取
+
 	idleWorkers := p.workers
 	n := len(idleWorkers) - 1
 	if n >= 0 {
@@ -99,7 +98,7 @@ func (p *Pool) GetWorker() *worker {
 		p.lock.Unlock()
 		return w
 	}
-	//3、如果没有空闲的worker,则创建一个新的worker
+
 	if p.running < p.cap {
 		//创建一个新的worker
 		w := &worker{
@@ -109,7 +108,7 @@ func (p *Pool) GetWorker() *worker {
 		w.run()
 		return w
 	}
-	//5、如果worker数量 + 运行的worker数量大于容量，则阻塞等待worker释放
+
 	for {
 		p.lock.Lock()
 		idleWorkers := p.workers

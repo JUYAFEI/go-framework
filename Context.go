@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 )
 
 const DefaultMemory = 32 << 20
@@ -25,6 +26,28 @@ type Context struct {
 	formCache  url.Values
 	StatusCode int
 	Logger     *golog.Logger
+	sameSite   http.SameSite
+	mu         sync.RWMutex
+	Keys       map[string]any
+}
+
+func (c *Context) SetSameSite(s http.SameSite) {
+	c.sameSite = s
+}
+func (c *Context) Set(key string, value any) {
+	c.mu.Lock()
+	if c.Keys == nil {
+		c.Keys = make(map[string]any)
+	}
+	c.Keys[key] = value
+	c.mu.Unlock()
+}
+
+func (c *Context) Get(key string) (value any, ok bool) {
+	c.mu.RLock()
+	value, ok = c.Keys[key]
+	c.mu.RUnlock()
+	return
 }
 
 func (c *Context) QueryMap(key string) (dicts map[string]string) {
@@ -268,4 +291,20 @@ func (c *Context) Render(statusCode int, r render.Render) error {
 
 func (c *Context) Fail(code int, msg string) {
 	c.String(code, msg)
+}
+
+func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
+	if path == "" {
+		path = "/"
+	}
+	http.SetCookie(c.W, &http.Cookie{
+		Name:     name,
+		Value:    url.QueryEscape(value),
+		MaxAge:   maxAge,
+		Path:     path,
+		Domain:   domain,
+		SameSite: c.sameSite,
+		Secure:   secure,
+		HttpOnly: httpOnly,
+	})
 }
