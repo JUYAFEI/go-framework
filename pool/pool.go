@@ -18,8 +18,8 @@ type Pool struct {
 	running     int32         //正在运行的worker数量
 	expire      time.Duration //空闲worker过期时间
 	release     chan sig      //释放资源
-	lock        sync.Mutex
-	once        sync.Once //保证只执行一次
+	lock        sync.Mutex    //锁
+	once        sync.Once     //保证只执行一次
 	workerCache sync.Pool
 }
 
